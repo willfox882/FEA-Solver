@@ -1,0 +1,707 @@
+# FEA SOLVER — PROJECT CONTEXT (claude.mb)
+# Source of truth for all AI-assisted development.
+# Updated: 2026-04-22 — Phase 8 (backend hardening) complete. 148 Python tests passing.
+
+---
+
+## OVERVIEW
+
+Windows-native WPF desktop application wrapping CalculiX (FEA solver) and Gmsh (mesher).
+Scope: 3D linear static structural analysis only.
+Workflow: Import STEP → Mesh → Assign BCs/Loads → Run → Visualize results.
+
+---
+
+## TECHNOLOGY STACK
+
+| Layer            | Technology                        | Reason                                                  |
+|------------------|-----------------------------------|---------------------------------------------------------|
+| UI               | WPF (.NET 8, C#)                 | Windows-native, mature, MVVM-friendly                   |
+| 3D Viewport      | HelixToolkit.Wpf                 | OpenGL-backed, STEP/mesh display, hit-testing           |
+| STEP Import      | OpenCascade (OCC via PythonOCC)  | Industry-standard STEP kernel; C# OCC bindings fragile  |
+| Meshing          | Gmsh (Python API or CLI)         | Best-in-class open-source tet mesher; Python API clean  |
+| FEA Solver       | CalculiX (ccx.exe)               | Open-source, *.inp/*.frd format, well-documented        |
+| Parsing/Scripts  | Python 3.11+                     | Gmsh API, OCC, FRD parsing, mesh I/O                    |
+| C#/Python IPC    | File-based + subprocess          | Simple, debuggable, no COM/gRPC complexity              |
+| Config           | appsettings.json (C#)            | Standard .NET config, no hardcoded paths                |
+| Logging          | Serilog (C#) + Python logging    | Structured logs, file sink                             |
+| Units            | SI throughout (m, Pa, N)         | Consistent; UI displays mm/MPa with conversion         |
+
+---
+
+## REPO STRUCTURE
+
+```
+FEA-SOLVER/
+├── claude.mb                          ← project context (this file)
+├── README.md
+├── .gitignore
+│
+├── src/
+│   ├── FEASolver.App/                 ← WPF application (C#, .NET 8)
+│   │   ├── FEASolver.App.csproj
+│   │   ├── App.xaml / App.xaml.cs
+│   │   ├── MainWindow.xaml / .cs
+│   │   ├── Views/
+│   │   │   ├── ViewportView.xaml
+│   │   │   ├── ModelTreeView.xaml
+│   │   │   ├── PropertiesView.xaml
+│   │   │   └── ResultsView.xaml
+│   │   ├── ViewModels/
+│   │   │   ├── MainViewModel.cs
+│   │   │   ├── ViewportViewModel.cs
+│   │   │   ├── ModelTreeViewModel.cs
+│   │   │   ├── PropertiesViewModel.cs
+│   │   │   └── ResultsViewModel.cs
+│   │   ├── Models/                    ← C# data models (UI-side)
+│   │   │   ├── MeshModel.cs
+│   │   │   ├── BoundaryCondition.cs
+│   │   │   ├── Load.cs
+│   │   │   └── MaterialModel.cs
+│   │   ├── Services/
+│   │   │   ├── PipelineService.cs     ← orchestrates full workflow
+│   │   │   ├── MeshingService.cs      ← calls Python meshing script
+│   │   │   ├── SolverService.cs       ← calls ccx.exe
+│   │   │   ├── ResultService.cs       ← calls Python FRD parser
+│   │   │   └── ConfigService.cs       ← reads appsettings.json
+│   │   ├── Helpers/
+│   │   │   ├── RelayCommand.cs
+│   │   │   └── AsyncRelayCommand.cs
+│   │   ├── Converters/
+│   │   │   └── StressColorConverter.cs
+│   │   └── appsettings.json
+│   │
+│   └── FEASolver.Scripts/             ← Python scripts (called via subprocess)
+│       ├── requirements.txt
+│       ├── mesh_step.py               ← STEP → Gmsh mesh → .msh + face map JSON
+│       ├── parse_frd.py               ← .frd → results JSON
+│       ├── write_inp.py               ← mesh + BCs/loads → .inp
+│       └── utils/
+│           ├── gmsh_utils.py
+│           ├── frd_reader.py
+│           └── inp_writer.py
+│
+├── tests/
+│   ├── FEASolver.Tests/               ← xUnit C# tests
+│   └── scripts_tests/                 ← pytest Python tests
+│
+├── tools/                             ← bundled or located external tools
+│   ├── ccx/                           ← CalculiX binary (ccx.exe + DLLs)
+│   └── gmsh/                          ← Gmsh binary (optional; prefer Python API)
+│
+└── docs/
+    └── architecture.md
+```
+
+---
+
+## DATA FLOW
+
+```
+STEP file
+  │
+  ▼ [mesh_step.py: PythonOCC + Gmsh API]
+  ├── mesh.msh           (Gmsh v2 format)
+  └── face_map.json      (CAD face ID → mesh element/node IDs)
+  │
+  ▼ [C# MeshingService → deserialize]
+  MeshData (nodes, elements, face groups)
+  │
+  ▼ [User: face selection, BC/load assignment in WPF UI]
+  FEAModel (MeshData + BCs + Loads + Material)
+  │
+  ▼ [write_inp.py]
+  model.inp
+  │
+  ▼ [SolverService: ccx.exe model]
+  model.frd + model.dat
+  │
+  ▼ [parse_frd.py]
+  results.json (node displacements, von Mises stress per node)
+  │
+  ▼ [C# ResultService → deserialize → HelixToolkit colormap]
+  3D stress/displacement visualization
+```
+
+---
+
+## DATA MODELS
+
+### Python (canonical — serialized to/from JSON)
+
+```python
+# Node
+{
+  "id": int,           # 1-based CalculiX node number
+  "x": float,          # SI: meters
+  "y": float,
+  "z": float
+}
+
+# Element
+{
+  "id": int,           # 1-based
+  "type": "C3D10",     # 10-node tet (default); also C3D4 allowed
+  "nodes": [int, ...]  # node IDs, length matches element type
+}
+
+# FaceGroup (CAD face → mesh surface)
+{
+  "face_id": int,       # OCC/Gmsh face tag
+  "element_faces": [[element_id, face_index], ...],  # face_index: 0-3 for tet
+  "node_ids": [int, ...]  # all nodes on this face (deduplicated)
+}
+
+# Material
+{
+  "name": str,
+  "youngs_modulus": float,  # Pa
+  "poissons_ratio": float
+}
+
+# BoundaryCondition
+{
+  "type": "FIXED" | "ROLLER_X" | "ROLLER_Y" | "ROLLER_Z" | "PINNED",
+  "face_id": int,
+  "node_ids": [int, ...]  # resolved from face_map at BC assignment time
+}
+
+# Load (distributed surface traction)
+{
+  "type": "SURFACE_TRACTION" | "PRESSURE",
+  "face_id": int,
+  "magnitude": float,   # Pa (pressure) or N/m² (traction)
+  "direction": [float, float, float]  # unit vector (global), null for pressure
+}
+
+# LocalizedLoad — point load
+{
+  "type": "POINT_LOAD",
+  "face_id": int,          # face where load is applied
+  "location": {
+    "mode": "NEAREST_NODE" | "PARAMETRIC" | "ABSOLUTE_XYZ",
+    "xyz": [float, float, float],   # absolute coords OR resolved coords
+    "uv": [float, float]            # parametric [0-1] if mode=PARAMETRIC
+  },
+  "force": [float, float, float],   # N, global XYZ
+  "resolved_node_id": int           # set during INP generation
+}
+
+# LocalizedLoad — moment/torque
+{
+  "type": "MOMENT" | "TORQUE",
+  "face_id": int,
+  "axis_origin": [float, float, float],
+  "axis_direction": [float, float, float],  # unit vector
+  "magnitude": float,          # N·m
+  "moment_vector": [float, float, float],   # N·m, derived from axis+magnitude
+  "node_ids": [int, ...]       # distributed over face nodes as force couple
+}
+
+# ResultField
+{
+  "type": "DISPLACEMENT" | "VONMISES",
+  "num_nodes": int,
+  "node_ids": [int, ...],
+  "values": [float, ...]       # scalar (vonmises) or magnitude of vector
+}
+
+# Full results
+{
+  "displacement_x": ResultField,
+  "displacement_y": ResultField,
+  "displacement_z": ResultField,
+  "displacement_mag": ResultField,
+  "vonmises": ResultField
+}
+```
+
+### C# (mirrors Python models, used in WPF)
+
+```csharp
+// MeshData.cs — deserialized from mesh_step.py output
+public record Node(int Id, double X, double Y, double Z);
+public record Element(int Id, string Type, int[] Nodes);
+public record FaceGroup(int FaceId, int[][] ElementFaces, int[] NodeIds);
+public record MeshData(Node[] Nodes, Element[] Elements, FaceGroup[] FaceGroups);
+
+// BoundaryCondition.cs
+public enum BcType { Fixed, RollerX, RollerY, RollerZ, Pinned }
+public record BoundaryCondition(BcType Type, int FaceId, int[] NodeIds);
+
+// Load.cs
+public enum LoadType { SurfaceTraction, Pressure, PointLoad, Moment, Torque }
+public record Load(LoadType Type, int FaceId, double Magnitude,
+                   double[]? Direction, LocalizedLoadData? Localized);
+
+// FEAModel.cs — the full model passed to write_inp.py
+public record FEAModel(MeshData Mesh, MaterialModel Material,
+                       BoundaryCondition[] BCs, Load[] Loads,
+                       string WorkDir);
+```
+
+---
+
+## FILE CONTRACTS
+
+### mesh_step.py → outputs
+
+**mesh.msh (Gmsh v2)**
+```
+$MeshFormat
+2.2 0 8
+$EndMeshFormat
+$Nodes
+N
+node_id x y z
+...
+$EndNodes
+$Elements
+M
+elem_id elem_type tags... node_ids...
+...
+$EndElements
+```
+
+**face_map.json**
+```json
+{
+  "faces": [
+    {
+      "face_id": 1,
+      "element_faces": [[101, 0], [102, 2]],
+      "node_ids": [45, 46, 47, 50]
+    }
+  ]
+}
+```
+
+### write_inp.py → model.inp
+
+```
+*HEADING
+FEA Solver — Linear Static
+
+*NODE
+1, 0.0, 0.0, 0.0
+...
+
+*ELEMENT, TYPE=C3D10, ELSET=EALL
+1, 1,2,3,4,5,6,7,8,9,10
+...
+
+*MATERIAL, NAME=STEEL
+*ELASTIC
+200000000000.0, 0.3
+
+*SOLID SECTION, ELSET=EALL, MATERIAL=STEEL
+1.0
+
+*STEP
+*STATIC
+
+*BOUNDARY
+** Fixed support
+NSET_FIXED, 1, 3, 0.0
+
+*CLOAD
+** Point load: node 45, DOF 1 (X), magnitude 1000 N
+45, 1, 1000.0
+45, 2, 0.0
+45, 3, 0.0
+
+*DLOAD
+** Distributed: face element, load type, magnitude/direction
+101, P1, -1000.0
+
+*NODE PRINT, NSET=NALL
+U
+
+*EL PRINT, ELSET=EALL
+S
+
+*NODE FILE
+U
+
+*EL FILE
+S
+
+*END STEP
+```
+
+### parse_frd.py → results.json
+
+```json
+{
+  "step": 1,
+  "displacement_x": {"node_ids": [1,2,...], "values": [0.0, 1.2e-5, ...]},
+  "displacement_y": {"node_ids": [1,2,...], "values": [...]},
+  "displacement_z": {"node_ids": [1,2,...], "values": [...]},
+  "displacement_mag": {"node_ids": [1,2,...], "values": [...]},
+  "vonmises": {"node_ids": [1,2,...], "values": [0.0, 1.5e6, ...]}
+}
+```
+
+---
+
+## INP PATTERNS — LOAD TYPES
+
+### Fixed Support
+```
+*NSET, NSET=NFIX
+45, 46, 47, 50
+*BOUNDARY
+NFIX, 1, 3, 0.0
+```
+
+### Distributed Pressure (normal to face)
+```
+*ELSET, ELSET=EFACE1
+101, 102
+*DLOAD
+EFACE1, P1, 5000.0
+```
+Note: P1 = face 1 of element. Face index mapping (CalculiX C3D10):
+- S1=face 1 (nodes 1,2,3), S2=face 2 (nodes 1,2,4), S3=face 3 (nodes 2,3,4), S4=face 4 (nodes 1,3,4)
+
+### Point Load (nearest node)
+```
+*CLOAD
+45, 1, 500.0
+45, 2, 0.0
+45, 3, -1000.0
+```
+
+### Moment/Torque (distributed as force couple over face nodes)
+For torque T about axis (unit vector a) applied to N face nodes at positions r_i:
+```
+F_i = (T / N) * (a × (r_i - r_centroid)) / |r_i - r_centroid|²
+```
+Written as individual *CLOAD entries per node.
+
+---
+
+## CONVENTIONS
+
+- **Units**: SI (m, Pa, N, N·m). UI shows mm / MPa with factor conversion.
+- **Coordinate system**: Right-hand. Y-up in HelixToolkit; Z-up in CalculiX — apply transform.
+- **Node/element IDs**: 1-based (CalculiX convention).
+- **Mesh element type**: C3D10 (10-node quadratic tet) preferred; C3D4 fallback.
+- **File naming**: `{project_name}_{timestamp}/` working directory per run.
+- **Face IDs**: match Gmsh physical surface tags (integers ≥ 1).
+
+---
+
+## CONFIG (appsettings.json)
+
+```json
+{
+  "Paths": {
+    "CcxExe": "tools/ccx/ccx.exe",
+    "PythonExe": "python",
+    "ScriptsDir": "src/FEASolver.Scripts",
+    "WorkspaceRoot": "%APPDATA%/FEASolver/workspace"
+  },
+  "Meshing": {
+    "DefaultElementSize": 0.01,
+    "ElementOrder": 2,
+    "Algorithm3D": 4
+  },
+  "Solver": {
+    "TimeoutSeconds": 300
+  },
+  "UI": {
+    "DisplayUnitsLength": "mm",
+    "DisplayUnitsStress": "MPa",
+    "DefaultMaterial": {
+      "Name": "Steel",
+      "YoungsModulus": 200000000000.0,
+      "PoissonsRatio": 0.3
+    }
+  }
+}
+```
+
+---
+
+## MODULE RESPONSIBILITIES
+
+### C# Modules
+
+| Module | Class | Responsibility |
+|--------|-------|----------------|
+| UI/Nav | MainViewModel | Shell, navigation, workflow state machine |
+| Viewport | ViewportViewModel | HelixToolkit 3D scene, face hit-testing |
+| Meshing | MeshingService | Subprocess: calls mesh_step.py, deserializes output |
+| Solver | SolverService | Subprocess: calls ccx.exe, streams stdout |
+| Results | ResultService | Subprocess: calls parse_frd.py, deserializes results.json |
+| Pipeline | PipelineService | Orchestrates Meshing → INP write → Solver → Parse |
+| Config | ConfigService | Reads appsettings.json, resolves paths, expands env vars |
+| Logging | SerilogConfig | File + debug sink, all subprocess calls logged |
+
+### Python Modules
+
+| Script | Responsibility |
+|--------|----------------|
+| mesh_step.py | OCC STEP import → Gmsh mesh → mesh.msh + face_map.json |
+| write_inp.py | FEAModel JSON → CalculiX .inp |
+| parse_frd.py | CalculiX .frd → results.json |
+| gmsh_utils.py | Gmsh API helpers: mesh sizing, physical groups, export |
+| frd_reader.py | .frd binary/text parser for U (displacement) and S (stress) |
+| inp_writer.py | .inp section writers, torque → force couple conversion |
+
+---
+
+## ERROR HANDLING
+
+| Scenario | Detection | Response |
+|----------|-----------|----------|
+| ccx.exe not found | ConfigService startup check | Alert user, open config dialog |
+| Python not found | subprocess OSError | Alert user with install instructions |
+| Gmsh mesh failure | Non-zero exit code + stderr | Display stderr in log panel |
+| ccx divergence | Parse .dat for "NO CONVERGENCE" | Show warning, display partial results |
+| Under-constrained model | ccx singular matrix error in stdout | Warn: "model may be under-constrained" |
+| STEP import failure | OCC exception in mesh_step.py | Propagate error message to UI |
+| Missing face_map | FileNotFoundError after meshing | Re-run meshing |
+
+---
+
+## PERFORMANCE CONSTRAINTS
+
+- Max recommended mesh: ~500k nodes / 300k elements (UI remains responsive).
+- Meshing and solving run async (Task + CancellationToken).
+- Mesh cached in work directory; re-use if STEP + mesh params unchanged (hash check).
+- HelixToolkit mesh built from triangle soup; use frozen MeshGeometry3D.
+- Results colormap built on background thread; dispatched to UI thread.
+
+---
+
+## FACE SELECTION MECHANISM
+
+1. HelixToolkit hit-testing returns 3D point + triangle.
+2. Triangle → element face → FaceGroup via prebuilt lookup dict.
+3. Selected FaceGroup highlighted (emissive color override on MeshGeometry3D).
+4. Multiple faces selectable (Ctrl+Click).
+5. Selection set stored in ViewportViewModel.SelectedFaceIds.
+
+---
+
+## LOCALIZED LOAD — POINT LOCATION RESOLUTION
+
+```
+mode = NEAREST_NODE:
+  resolved_node = argmin over face node_ids of dist(node.xyz, specified.xyz)
+
+mode = PARAMETRIC:
+  # u,v in [0,1] mapped to face AABB
+  xyz = face_bbox_min + u*(bbox_max.x - bbox_min.x), v*(bbox_max.y - bbox_min.y)
+  resolved_node = argmin dist(node.xyz, xyz)
+
+mode = ABSOLUTE_XYZ:
+  # user specifies exact XYZ
+  resolved_node = argmin over face node_ids of dist(node.xyz, xyz)
+```
+
+---
+
+## TORQUE → FORCE COUPLE CONVERSION
+
+```python
+def torque_to_nodal_forces(node_positions, axis_origin, axis_direction, torque_Nm):
+    """
+    Distribute torque as tangential nodal forces.
+    Returns: {node_id: [Fx, Fy, Fz]}
+    """
+    import numpy as np
+    a = np.array(axis_direction) / np.linalg.norm(axis_direction)
+    centroid = np.mean(node_positions, axis=0)
+    forces = {}
+    N = len(node_positions)
+    for i, (nid, pos) in enumerate(node_positions.items()):
+        r = np.array(pos) - centroid
+        r_perp = r - np.dot(r, a) * a   # component perpendicular to axis
+        r_mag = np.linalg.norm(r_perp)
+        if r_mag < 1e-12:
+            forces[nid] = [0.0, 0.0, 0.0]
+        else:
+            tangent = np.cross(a, r_perp) / r_mag
+            F_mag = torque_Nm / (N * r_mag)
+            forces[nid] = (tangent * F_mag).tolist()
+    return forces
+```
+
+---
+
+## FEA IMPLEMENTATION ROADMAP
+
+### Phase 0 — Repo Scaffolding & Tooling
+**Goals**: Working repo, build system, external tool verification.
+**Tasks**:
+- Initialize git repo, .gitignore
+- Create solution file + WPF project (.NET 8)
+- Add NuGet: HelixToolkit.Wpf, Serilog, Newtonsoft.Json, CommunityToolkit.Mvvm
+- Create Python venv, requirements.txt (gmsh, pythonOCC-core, numpy)
+- Verify ccx.exe executes
+- Implement ConfigService + appsettings.json
+- Implement basic logging (Serilog to file)
+
+**Files**: FEASolver.sln, FEASolver.App.csproj, appsettings.json, requirements.txt
+
+### Phase 1 — Core Data Models & Mesh I/O
+**Goals**: Python and C# data models, JSON serialization round-trip.
+**Tasks**:
+- Python: define dataclasses for Node, Element, FaceGroup, FEAModel
+- Python: JSON serialization/deserialization (dataclasses + json stdlib)
+- C#: define record types matching Python models
+- C#: Newtonsoft.Json deserialization of mesh.msh output
+- Unit tests: Python (pytest) + C# (xUnit) for round-trip
+
+**Files**: mesh_step.py (stubs), utils/gmsh_utils.py, MeshData.cs, Load.cs, BoundaryCondition.cs
+
+### Phase 2 — Gmsh Integration
+**Goals**: STEP → mesh.msh + face_map.json.
+**Tasks**:
+- mesh_step.py: import STEP via OCC (gmsh.model.occ.importShapes)
+- Generate physical surfaces from OCC faces (getEntities dim=2)
+- Mesh with algorithm 4 (Delaunay), order 2 (C3D10)
+- Export .msh v2
+- Build face_map.json: for each physical group, collect element faces + nodes
+- MeshingService.cs: subprocess call, timeout, error capture
+- Test: simple cube STEP file
+
+**Files**: mesh_step.py, gmsh_utils.py, MeshingService.cs
+
+### Phase 3 — CalculiX Integration ✓ COMPLETE
+**Goals**: FEAModel → .inp → run ccx → capture output.
+**Implemented**:
+- write_inp.py + inp_writer.py (InpWriterV2 typed, InpWriter legacy): all section writers
+- torque_to_nodal_forces: tangential force couple distribution
+- SolverService.cs: async ccx subprocess, BeginOutputReadLine streaming, WaitAsync timeout
+- PipelineService.cs: ResolveBcNodes called before FEAModel serialization
+- _write_moment bug fixed: `origin = loc.xyz if loc.xyz is not None else self._face_centroid()`
+- FrdReader: fixed-width 12-char column parser, handles negative sign concatenation
+- tests/scripts_tests/test_pipeline.py: 18 tests (INP structure, JSON round-trip, mock FRD parse)
+- tests/scripts_tests/test_inp_generation.py: 20 tests (Gmsh box → InpWriterV2 → verify .inp)
+
+**Files**: write_inp.py, inp_writer.py, SolverService.cs, PipelineService.cs, frd_reader.py
+
+### Phase 4 — WPF UI + 3D Visualization ✓ COMPLETE
+**Implemented**:
+- MainWindow.xaml: 3-panel layout (tree|viewport|properties), menu, toolbar, status bar
+- ViewportView.xaml + ViewportViewModel: HelixViewport3D, MeshGeometryVisual3D
+- ViewportViewModel.BuildGeometry(): extracts surface triangles via TetFaceCorners, populates _vertexFaceMap for O(1) hit-test, caches _faceTriangles per face for selection rebuilds
+- SelectionGeometry (MeshGeometry3D): rebuilt from _faceTriangles on each selection change, bound to SelectionVisual overlay (semi-transparent cyan)
+- ModelTreeViewModel: tree nodes for mesh, faces, BCs, loads
+- MeshStats in status bar
+
+**Files**: MainWindow.xaml, ViewportView.xaml/.cs, ViewportViewModel.cs, MainViewModel.cs, ModelTreeViewModel.cs
+
+### Phase 5 — Face Selection + BCs + Localized Loads ✓ COMPLETE
+**Implemented**:
+- Hit-testing: ViewportView.xaml.cs MouseDown → FindHits → RayMeshGeometry3DHitTestResult.VertexIndex1 → GetFaceIdFromVertex() → OnFaceHit()
+- Selection highlight: SelectionGeometry property (MeshGeometry3D) rebuilt on face selection change
+- PropertiesView.xaml: BC type ComboBox, Assign BC/Load buttons, scrollable BC/Load lists
+- PropertiesViewModel: AssignBoundaryCondition/AssignLoad RelayCommands, point load XYZ/force inputs, moment axis/magnitude inputs
+- Fixed PropertiesView namespace: models="clr-namespace:FEASolver.Core.Models;assembly=FEASolver.Core"
+- Store selection in ViewportViewModel.SelectedFaceIds → FaceSelectionChanged event → MainViewModel.OnFaceSelectionChanged → PropertiesViewModel.SelectedFaceIds
+
+**Not implemented**: Load glyphs (arrow/arc-arrow) — deferred
+
+**Files**: ViewportViewModel.cs, ViewportView.xaml/.cs, PropertiesView.xaml, PropertiesViewModel.cs
+
+### Phase 6 — End-to-End Pipeline ✓ COMPLETE
+**Implemented**:
+- PipelineService.cs: orchestrates Mesh → ResolveBcNodes → WriteINP → ccx → ParseFRD
+- ResultsViewModel.UpdateColormap(): builds surface MeshGeometry3D with TextureCoordinates (U=normalized value), DiffuseMaterial(LinearGradientBrush blue→cyan→green→yellow→red), deformed mesh via DeformationScale slider
+- ResultsView.xaml: ModelVisual3D bound to ResultModel (Model3D), color legend overlay, node probe tooltip, display mode ComboBox, deformation scale Slider
+- ResultsView.xaml.cs: MouseDown → FindHits → OnNodeProbed(vertexIndex) → ProbeText
+- _vertexNodeMap: vertex→node_id for probe lookup
+
+**Files**: PipelineService.cs, ResultService.cs, ResultsView.xaml/.cs, ResultsViewModel.cs, parse_frd.py, frd_reader.py
+
+### Phase 7 — UX Polish, Error Handling, Config, Logging ✓ COMPLETE
+**Implemented**:
+- ConfigDialog.xaml + ConfigDialogViewModel: Browse for ccx/python/scripts/workspace, Validate button runs ToolValidator, Save persists to appsettings.json
+- Startup validation: App.xaml.cs runs ToolValidator on startup, shows config dialog if tools missing
+- Cancel button: CancellationTokenSource in MainViewModel, BeginOperation/EndOperation helpers, SolverService kills ccx process on cancellation
+- Error detail panel: collapsible border above status bar, shows full error message, Dismiss button
+- Export CSV: ExportService (FEASolver.Core) → WriteResultsCsvAsync; columns: NodeId, X_m,Y_m,Z_m, Ux/Uy/Uz_mm, U_mag_mm, VonMises_MPa; Export menu item + toolbar button
+- Units: E displayed in GPa via YoungsModulusGPa property wrapper in PropertiesViewModel
+- MeshStats.Summary shown in status bar (nodes, elements, faces, bbox in mm)
+- Serilog: file sink in workspace/logs, all subprocess calls logged with timing
+- ExportServiceTests.cs: 8 xUnit tests (file creation, header, row count, unit conversion, null fields, invariant culture, cancellation)
+
+**Files**: MainViewModel.cs, MainWindow.xaml, PropertiesViewModel.cs, PropertiesView.xaml, ExportService.cs (Core), SolverService.cs, ExportServiceTests.cs
+
+### Phase 8 — Backend hardening & NX-Nastran parity ✓ COMPLETE (2026-04-22)
+**Goals**: Verified physics per load type, realistic face-load semantics, C3D10 guarantee, automated end-to-end regression.
+
+**Implemented**:
+- **C3D10 enforcement**: `gmsh_utils.promote_to_quadratic()` calls `setOrder(2)` *after* Netgen optimisation (Netgen silently demotes quadratic to linear). Integrated into `mesh_step.py` and `verify_solver.py`.
+- **LoadType.DistributedForce**: total N on a face, auto-divided to traction F/A, then consistent-Galerkin lumped. Σ CLOAD = F exactly regardless of mesh density. Python + C# enum + validation + INP path (`inp_writer._write_distributed_force`).
+- **Auto face-normal direction**: new `DirectionMode { Explicit, NormalOutward, NormalInward }` field on `Load`. Writer computes outward normal *per element-face* by pointing away from the tet's 4th vertex. Works on tilted/curved surfaces — user never types a unit vector. Applies to SurfaceTraction and DistributedForce. Python: `utils/models.py`; C#: `Core/Models/Load.cs`.
+- **INP pre-write validation extended** to SurfaceTraction and DistributedForce (was only Pressure/PointLoad — silent empty-CLOAD bug).
+- **Verification harness**: `src/FEASolver.Scripts/verify_solver.py` programmatically builds a 1 m × 50.8 mm × 25.4 mm steel cantilever via Gmsh OCC, runs the full pipeline, and checks Σ Rx ≈ -10 kN, σ_avg ≈ F/A ≈ 7.75 MPa, δ_tip ≈ FL/AE. Exit codes: 0 pass / 1 numeric / 2 pipeline / 3 ccx-not-found.
+- **Per-load-type physics tests** (`tests/scripts_tests/test_load_types.py`, 13 tests):
+  - Pressure → `*DLOAD` P1-P4 emitted per element-face.
+  - SurfaceTraction → Σ CLOAD = traction·area·dir.
+  - DistributedForce → Σ CLOAD = F_total·dir.
+  - Moment/Torque → Σ F = 0 **and** Σ(r × F) = applied torque.
+  - Tilted-plane normal (parametrised 0/30/45/-30/60/90°).
+- **DistributedForce tests** (`test_distributed_force.py`, 4 tests).
+
+**Files touched**:
+- Python: `utils/models.py`, `utils/inp_writer.py`, `utils/mesh_io.py`, `utils/gmsh_utils.py`, `mesh_step.py`, `verify_solver.py` (new).
+- C#: `FEASolver.Core/Models/Load.cs`, `FEASolver.Core/Models/MeshExtensions.cs`.
+- Tests: `test_load_types.py` (new), `test_distributed_force.py` (new).
+- Docs: `docs/ship_readiness.md` (new, NX-Nastran gap analysis).
+
+**Test count**: 131 → 148 (all green).
+
+**Known shippable-v1 gaps** (per `docs/ship_readiness.md`):
+1. Gravity / body force (`*DLOAD EALL, GRAV`).
+2. Enforced nonzero displacement BC.
+3. Modal analysis (`*FREQUENCY`).
+4. Strain + strain-energy output (parse ETO from FRD).
+5. Additional `verify_solver.py` benchmarks: cantilever bending, torsion, pressure vessel.
+
+---
+
+## EXTENSIBILITY HOOKS
+
+| Feature | Where to extend |
+|---------|-----------------|
+| Multiple materials | FEAModel.Materials[], INP writer per-ELSET |
+| Multiple load cases | FEAModel.LoadCases[], *STEP iteration in INP |
+| Modal analysis | New SolverMode enum → *FREQUENCY step |
+| Nonlinear | *NLGEOM flag + *STATIC with increments |
+| Thermal loads | *TEMPERATURE + *EXPANSION in INP |
+| Remote force | Resolve to RBE2/RBE3 equivalent via MPC |
+| Result types | Extend parse_frd.py for PE (plastic strain), etc. |
+
+---
+
+## SECURITY
+
+- All subprocess calls use explicit executable paths from config (no shell=True in Python, UseShellExecute=false in C#).
+- Work directory path constructed with Path.Combine, never string concat with user input.
+- STEP file path validated (extension check, path traversal check) before passing to scripts.
+- No eval(), no dynamic imports.
+
+---
+
+## DEPENDENCY VERSIONS (pinned)
+
+```
+# Python requirements.txt
+gmsh==4.12.2
+numpy==1.26.4
+# pythonOCC installed via conda: conda install -c conda-forge pythonocc-core=7.7.2
+
+# C# NuGet (in .csproj)
+HelixToolkit.Wpf: 2.25.0
+Serilog: 3.1.1
+Serilog.Sinks.File: 5.0.0
+Newtonsoft.Json: 13.0.3
+CommunityToolkit.Mvvm: 8.3.2
+```

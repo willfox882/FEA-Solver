@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sed -i 's/using FEASolver\\\\.Models;/using FEASolver.Core.Models;\\\\nusing FEASolver.Core.Services;/' Services/MeshingService.cs Services/ResultService.cs Services/PipelineService.cs Services/SolverService.cs)",
+      "Bash(sed -i 's/using FEASolver\\\\.Models;/using FEASolver.Core.Models;\\\\nusing FEASolver.Core.Services;/' ViewModels/MainViewModel.cs ViewModels/ViewportViewModel.cs ViewModels/PropertiesViewModel.cs ViewModels/ResultsViewModel.cs ViewModels/ModelTreeViewModel.cs)",
+      "Bash(dotnet restore:*)",
+      "Bash(where dotnet:*)",
+      "Bash(C:\\\\Program Files\\\\dotnet\\\\dotnet.exe:*)",
+      "Bash(pip show:*)",
+      "Bash(python -m pytest tests/scripts_tests/ -v)",
+      "Bash(python -m pytest tests/scripts_tests/test_face_mapping.py -v)",
+      "Bash(pip install:*)",
+      "Bash(python -m pytest tests/scripts_tests/test_gmsh_integration.py -v)",
+      "Bash(python -m pytest tests/scripts_tests/ -v --tb=short)",
+      "Bash(python -m pytest tests/scripts_tests/ -q)",
+      "Bash(python:*)",
+      "Bash(dotnet build:*)",
+      "Bash(\"/c/Program Files/dotnet/dotnet.exe\" build src/FEASolver.App/FEASolver.App.csproj -v quiet)",
+      "Bash(cmd //c '\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" build \"C:\\\\Users\\\\willf\\\\OneDrive - University of Victoria\\\\0. Personal\\\\PROJECTS\\\\FEA SOLVER\\\\src\\\\FEASolver.App\\\\FEASolver.App.csproj\" -v quiet 2>&1')",
+      "Bash(powershell.exe:*)",
+      "Bash(dotnet search:*)",
+      "Bash(dotnet package:*)",
+      "Bash(awk '/^\\\\*CLOAD/{flag=1;next}/^\\\\*/{flag=0}flag' verify_work/model.inp)",
+      "Bash(awk '/^\\\\*CLOAD/{flag=1;next} /^\\\\*/{flag=0} flag && NF>0' verify_work/model.inp)",
+      "Bash(awk '/^\\\\*CLOAD/{flag=1;next} /^\\\\*/{flag=0} flag && NF>0 {split\\($0,a,\",\"\\); sum+=a[3]} END{print sum}' verify_work/model.inp)",
+      "Bash(awk '/^\\\\*CLOAD/{flag=1;next} /^\\\\*/{flag=0} flag && NF>0' verify_work3/model.inp)",
+      "Bash(awk '/^\\\\*CLOAD/{flag=1;next} /^\\\\*/{flag=0} flag && NF>0 {split\\($0,a,\",\"\\); sum+=a[3]} END{print \"Σ Fx =\", sum}' verify_work3/model.inp)",
+      "Bash(awk '/^\\\\*CLOAD/{flag=1;next} /^\\\\*/{flag=0} flag && NF>=3 {gsub\\(\",\",\"\",$0\\); s+=$3; n++} END{print \"count=\"n\" sum=\"s}' model.inp)",
+      "Bash(awk '/^\\\\*CLOAD/{flag=1;next} /^\\\\*/{flag=0} flag && NF>=3 {gsub\\(\",\",\"\",$0\\); s+=$3; n++} END{print \"cload count=\"n\" sum=\"s}' model.inp)",
+      "Bash(sed -n '99615,99635p' model.inp)",
+      "Bash(sed -n '99560,99570p' model.inp)",
+      "Bash(xxd)",
+      "Bash(awk '/^\\\\*NODE/{in_node=1; next} /^\\\\*/{in_node=0} in_node && NF>=4{ *)",
+      "Bash(awk '/^\\\\*CLOAD/{in_cl=1;next} /^\\\\*/{in_cl=0} in_cl && NF>0{ *)",
+      "Bash(python3 -c ' *)",
+      "Bash([ -f \"$WDIR/model.frd\" ])",
+      "Bash(python3 *)"
+    ]
+  }
+}

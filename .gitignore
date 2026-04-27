@@ -1,0 +1,39 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.rsuser
+*.DotSettings.user
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+
+# FEA working files
+*.frd
+*.dat
+*.cvg
+*.sta
+*.12d
+workspace/
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Tools (binaries not committed; user installs locally)
+tools/ccx/*.exe
+tools/ccx/*.dll
+tools/gmsh/*.exe
+tools/gmsh/*.dll
