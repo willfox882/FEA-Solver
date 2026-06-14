@@ -88,12 +88,15 @@ and full verify_solver.py path not executable here; INP/parse logic covered by u
   +6 pytest (incompressible-uniaxial identity + deviatoric reference). Suite 164→170.
   On branch fable/fix/strain-vonmises/audit-003 (stacked on the audit-001-002 branch).
 
+- audit-004 (MED): WriteInpAsync pipe-deadlock — fixed (drain stdout+stderr via Task.WhenAll).
+  On branch fable/fix/ci-and-pipeline-hardening/audit-004-005.
+- audit-005 (MED): CI added — .github/workflows/ci.yml (windows-latest; dotnet build/test +
+  pytest + no-solve smoke). Pre-validated locally. Same branch as audit-004.
+
 ## Remaining (from audit, priority order)
-- audit-004 (MED): PipelineService.WriteInpAsync stdout never drained → potential pipe deadlock.
-  Drain stdout+stderr concurrently (mirror MeshingService).
-- audit-005 (MED): no CI. Add GitHub Actions (dotnet build/test + pytest + ruff + regression job).
 - audit-006 (MED): dependency drift / no lockfile (numpy 1.26.4 pin vs 2.2.6 installed; gmsh,
   pytest, Python 3.11 vs 3.13). Pin/lock + reconcile requirements.txt vs claude.mb.
+  NOTE: CI uses Python 3.11 + requirements.txt as-is; revisit once pins reconciled.
 - audit-007 (LOW): FEAModel.validate rejects ν=0 and auxetic; allow −1<ν<0.5.
 - audit-008 (LOW): FRD float regex assumes 3-digit Windows exponent; relax to {2,3} + fixture.
 - audit-009 (LOW): no ruff/mypy/.editorconfig/analyzers.
