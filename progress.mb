@@ -93,11 +93,14 @@ and full verify_solver.py path not executable here; INP/parse logic covered by u
 - audit-005 (MED): CI added — .github/workflows/ci.yml (windows-latest; dotnet build/test +
   pytest + no-solve smoke). Pre-validated locally. Same branch as audit-004.
 
+- audit-007 (LOW): FEAModel.validate (models.py) gated ν on (0,0.5) → rejected ν=0/auxetic.
+  Fixed to thermodynamic (-1,0.5); +8 parametrized tests. Suite 170→178.
+  On branch fable/fix/poisson-range/audit-007. NOTE: C# ModelDiagnostics already used (-1,0.5).
+
 ## Remaining (from audit, priority order)
 - audit-006 (MED): dependency drift / no lockfile (numpy 1.26.4 pin vs 2.2.6 installed; gmsh,
   pytest, Python 3.11 vs 3.13). Pin/lock + reconcile requirements.txt vs claude.mb.
   NOTE: CI uses Python 3.11 + requirements.txt as-is; revisit once pins reconciled.
-- audit-007 (LOW): FEAModel.validate rejects ν=0 and auxetic; allow −1<ν<0.5.
 - audit-008 (LOW): FRD float regex assumes 3-digit Windows exponent; relax to {2,3} + fixture.
 - audit-009 (LOW): no ruff/mypy/.editorconfig/analyzers.
 - audit-010 (LOW): doc drift (148 vs 164 test count; architecture.md bare pointer).
