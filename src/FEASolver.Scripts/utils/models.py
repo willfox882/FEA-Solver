@@ -355,8 +355,11 @@ class FEAModel:
             errors.append("No loads defined.")
         if self.material.youngs_modulus <= 0:
             errors.append("Young's modulus must be > 0.")
-        if not (0 < self.material.poissons_ratio < 0.5):
-            errors.append("Poisson's ratio must be in (0, 0.5).")
+        # Thermodynamic bounds for isotropic linear elasticity: -1 < v < 0.5.
+        # v=0 (e.g. cork) and v<0 (auxetic foams/metamaterials) are valid;
+        # v=0.5 is incompressible (singular) and v=-1 degenerate, so both excluded.
+        if not (-1.0 < self.material.poissons_ratio < 0.5):
+            errors.append("Poisson's ratio must be in (-1, 0.5).")
         # Check all BC face IDs exist
         face_ids = {f.face_id for f in self.mesh.faces}
         for bc in self.boundary_conditions:

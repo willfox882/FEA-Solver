@@ -180,6 +180,32 @@ def test_fea_model_invalid_poisson():
     errors = model.validate()
     assert any("poisson" in e.lower() for e in errors)
 
+@pytest.mark.parametrize("nu", [0.0, -0.3, -0.99, 0.49])
+def test_fea_model_poisson_valid_range(nu):
+    """v=0, auxetic (v<0), and near-incompressible are all physically valid."""
+    mesh = tet4_mesh()
+    model = FEAModel(
+        mesh=mesh,
+        material=MaterialModel("Test", 200e9, nu),
+        boundary_conditions=[BoundaryCondition(BcType.FIXED, 1, [1, 2, 3])],
+        loads=[Load(LoadType.PRESSURE, 2, 1e6)],
+        work_dir="/tmp",
+    )
+    assert not any("poisson" in e.lower() for e in model.validate())
+
+@pytest.mark.parametrize("nu", [0.5, 0.6, -1.0, -1.5])
+def test_fea_model_poisson_out_of_range(nu):
+    """v>=0.5 (incompressible/invalid) and v<=-1 (degenerate) are rejected."""
+    mesh = tet4_mesh()
+    model = FEAModel(
+        mesh=mesh,
+        material=MaterialModel("Bad", 200e9, nu),
+        boundary_conditions=[BoundaryCondition(BcType.FIXED, 1, [1, 2, 3])],
+        loads=[Load(LoadType.PRESSURE, 2, 1e6)],
+        work_dir="/tmp",
+    )
+    assert any("poisson" in e.lower() for e in model.validate())
+
 def test_fea_model_invalid_face_id():
     mesh = tet4_mesh()
     model = FEAModel(
