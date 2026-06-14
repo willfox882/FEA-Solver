@@ -148,8 +148,14 @@ public class PipelineService
         using var proc = System.Diagnostics.Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start Python for INP writing.");
 
-        string stderr = await proc.StandardError.ReadToEndAsync(ct);
+        // Drain BOTH pipes concurrently before waiting for exit. stdout is
+        // redirected, so leaving it unread risks a deadlock if the script fills
+        // the stdout buffer while we block on stderr/WaitForExit.
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = proc.StandardError.ReadToEndAsync(ct);
+        await Task.WhenAll(stdoutTask, stderrTask);
         await proc.WaitForExitAsync(ct);
+        string stderr = await stderrTask;
 
         if (proc.ExitCode != 0)
             throw new Exception($"INP writer failed (exit {proc.ExitCode}):\n{stderr}");
