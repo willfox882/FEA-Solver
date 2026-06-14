@@ -84,9 +84,11 @@ and full verify_solver.py path not executable here; INP/parse logic covered by u
     Fixed: orient outward via away-from-tet-4th-vertex rule (same as INP writer), averaged
     over element-faces; centroid fallback. Verified on a reference tet. (commit 25ff946)
 
+- audit-003 (MED): _strain_vonmises wrong coeff (1/3 → 2/9). Fixed in frd_reader.py;
+  +6 pytest (incompressible-uniaxial identity + deviatoric reference). Suite 164→170.
+  On branch fable/fix/strain-vonmises/audit-003 (stacked on the audit-001-002 branch).
+
 ## Remaining (from audit, priority order)
-- audit-003 (MED): _strain_vonmises wrong coeff (frd_reader.py:283) — uses (1/3)Σdiff² should
-  be (2/9); returns 1.225× for normal strains. Fix + pytest invariant.
 - audit-004 (MED): PipelineService.WriteInpAsync stdout never drained → potential pipe deadlock.
   Drain stdout+stderr concurrently (mirror MeshingService).
 - audit-005 (MED): no CI. Add GitHub Actions (dotnet build/test + pytest + ruff + regression job).
