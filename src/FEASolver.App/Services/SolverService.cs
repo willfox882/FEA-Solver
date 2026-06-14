@@ -38,7 +38,10 @@ public class SolverService(ConfigService config)
         var psi = new ProcessStartInfo
         {
             FileName = ccx,
-            Arguments = $"-i {inputName}",
+            // ArgumentList lets the framework apply correct Windows argument
+            // escaping per token (audit-011). String interpolation would break if
+            // inputName ever contained a space or quote; this is robust by construction.
+            ArgumentList = { "-i", inputName },
             WorkingDirectory = workDir,
             UseShellExecute = false,
             RedirectStandardOutput = true,

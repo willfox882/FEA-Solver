@@ -102,13 +102,19 @@ and full verify_solver.py path not executable here; INP/parse logic covered by u
   so it can't steal a packed next-mantissa lead digit. +4 tests. Suite 178→182.
   On branch fable/fix/frd-exponent-width/audit-008.
 
+- audit-011 (LOW): SolverService passed ccx args via string interp ($"-i {inputName}").
+  Switched to ProcessStartInfo.ArgumentList { "-i", inputName } so the framework escapes
+  per-token (robust if name ever has spaces/quotes). No behavioral delta (name=const "model").
+  Release build + 37 C# tests green. On branch fable/fix/ccx-arglist/audit-011.
+  NOTE: SolverService lives in FEASolver.App (WPF, not referenced by Tests) → covered via
+  build + e2e path, not a unit test (input is a compile-time constant).
+
 ## Remaining (from audit, priority order)
 - audit-006 (MED): dependency drift / no lockfile (numpy 1.26.4 pin vs 2.2.6 installed; gmsh,
   pytest, Python 3.11 vs 3.13). Pin/lock + reconcile requirements.txt vs claude.mb.
   NOTE: CI uses Python 3.11 + requirements.txt as-is; revisit once pins reconciled.
 - audit-009 (LOW): no ruff/mypy/.editorconfig/analyzers.
 - audit-010 (LOW): doc drift (148 vs 164 test count; architecture.md bare pointer).
-- audit-011 (LOW): SolverService unquoted `-i {inputName}` (safe today, brittle).
 - Additional verify_solver.py benchmarks (bending, torsion, pressure vessel).
 
 # NOTES / OPEN QUESTIONS
