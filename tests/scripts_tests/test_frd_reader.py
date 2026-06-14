@@ -5,7 +5,7 @@ import math
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src/FEASolver.Scripts"))
-from utils.frd_reader import FrdReader, _vonmises
+from utils.frd_reader import FrdReader, _vonmises, _strain_vonmises
 
 
 SAMPLE_FRD = """\
@@ -49,3 +49,33 @@ def test_parse_frd(tmp_path):
     assert result["displacement_z"]["values"][1] == pytest.approx(-2e-4)
     assert len(result["vonmises"]["values"]) == 2
     assert result["vonmises"]["values"][0] > 0
+
+
+# ── audit-003: equivalent (von Mises) strain ────────────────────────────────
+
+def _eq_strain_reference(e11, e22, e33, e12, e23, e13):
+    """Independent reference: ε_eq = sqrt(2/3 · ε_dev:ε_dev), tensor shears."""
+    tr = (e11 + e22 + e33) / 3.0
+    d11, d22, d33 = e11 - tr, e22 - tr, e33 - tr
+    devdev = d11*d11 + d22*d22 + d33*d33 + 2.0*(e12*e12 + e23*e23 + e13*e13)
+    return math.sqrt(2.0 / 3.0 * devdev)
+
+
+def test_strain_vonmises_incompressible_uniaxial_equals_axial():
+    # Incompressible uniaxial: e11=e, e22=e33=-e/2 → ε_vm should equal |e|.
+    e = 1.0e-3
+    assert _strain_vonmises(e, -e/2, -e/2, 0, 0, 0) == pytest.approx(e, rel=1e-9)
+
+
+@pytest.mark.parametrize("comps", [
+    (1e-3, -5e-4, -5e-4, 0, 0, 0),
+    (2e-3, 1e-3, -4e-4, 3e-4, -2e-4, 1e-4),
+    (0, 0, 0, 7e-4, 0, 0),          # pure shear
+    (-1e-3, -1e-3, -1e-3, 0, 0, 0), # hydrostatic → 0
+])
+def test_strain_vonmises_matches_deviatoric_reference(comps):
+    assert _strain_vonmises(*comps) == pytest.approx(_eq_strain_reference(*comps), abs=1e-15)
+
+
+def test_strain_vonmises_hydrostatic_is_zero():
+    assert _strain_vonmises(5e-4, 5e-4, 5e-4, 0, 0, 0) == pytest.approx(0.0, abs=1e-15)

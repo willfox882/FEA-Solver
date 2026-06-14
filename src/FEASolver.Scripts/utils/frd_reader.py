@@ -284,10 +284,16 @@ def _strain_vonmises(e11: float, e22: float, e33: float,
                      e12: float, e23: float, e13: float) -> float:
     """Equivalent (von Mises) strain for tensor-strain components.
 
-    ε_vm = sqrt( (2/3) · [ (ε11-ε22)² + (ε22-ε33)² + (ε33-ε11)² ] / 2
-                 + (4/3) · (ε12² + ε23² + ε13²) )
-    For incompressible uniaxial: ε_vm = |ε_axial|.
+    ε_vm = sqrt( (2/3) · ε_dev:ε_dev )
+         = sqrt( (2/9) · [ (ε11-ε22)² + (ε22-ε33)² + (ε33-ε11)² ]
+                 + (4/3) · (ε12² + ε23² + ε13²) )         (tensor shears)
+
+    For incompressible uniaxial (ε22=ε33=-ε11/2): ε_vm = |ε_axial|.
+
+    NOTE (audit-003): the normal-difference term coefficient is 2/9, not 1/3.
+    The previous (1/3) form over-stated normal strains by sqrt(3/2) ≈ 1.225×
+    and contradicted the incompressible-uniaxial identity above.
     """
     dev = (e11 - e22) ** 2 + (e22 - e33) ** 2 + (e33 - e11) ** 2
     shear = e12 * e12 + e23 * e23 + e13 * e13
-    return math.sqrt((2.0 / 3.0) * (0.5 * dev + 2.0 * shear))
+    return math.sqrt((2.0 / 9.0) * dev + (4.0 / 3.0) * shear)
