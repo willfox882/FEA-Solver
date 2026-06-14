@@ -48,6 +48,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r src/FEASolver.Scripts/requirements.txt
 
+      - name: Lint (ruff, advisory)
+        continue-on-error: true   # surfaces style/lint issues without gating CI
+        run: |
+          python -m pip install ruff
+          ruff check .
+
       - name: Pytest
         run: python -m pytest tests/scripts_tests -q
 

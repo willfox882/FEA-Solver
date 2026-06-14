@@ -1,0 +1,11 @@
+<Project>
+  <!-- Repo-wide MSBuild defaults (audit-009). .NET analyzers are enabled and
+       run at the latest ruleset; findings surface as warnings and never fail
+       the build (no TreatWarningsAsErrors), so this is safe to adopt as-is. -->
+  <PropertyGroup>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

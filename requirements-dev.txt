@@ -1,0 +1,6 @@
+# Development tooling (lint + type-check). Not required to run the app.
+# Install:  pip install -r requirements-dev.txt
+# Configured in pyproject.toml. CI runs ruff as an advisory (non-blocking) step.
+-r src/FEASolver.Scripts/requirements.txt
+ruff>=0.6
+mypy>=1.11

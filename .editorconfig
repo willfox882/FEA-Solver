@@ -1,0 +1,33 @@
+# EditorConfig — repo-wide formatting conventions (audit-009).
+# https://editorconfig.org  ·  Applies to both C# and Python sources.
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# C#
+[*.{cs,csx}]
+indent_size = 4
+dotnet_sort_system_directives_first = true
+csharp_new_line_before_open_brace = all
+csharp_prefer_braces = true:suggestion
+dotnet_style_qualification_for_field = false:suggestion
+# Keep the existing xUnit suggestion advisory, not a build break.
+dotnet_diagnostic.xUnit2013.severity = suggestion
+
+# Python
+[*.{py,pyi}]
+indent_size = 4
+max_line_length = 100
+
+# Markup / config — 2-space
+[*.{json,yml,yaml,csproj,props,targets,xml,xaml}]
+indent_size = 2
+
+# Markdown — trailing whitespace can be meaningful (hard line breaks)
+[*.md]
+trim_trailing_whitespace = false

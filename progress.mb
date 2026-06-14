@@ -52,7 +52,8 @@ Torque distributed as r²-weighted nodal force couple: F_i=(T/D)(a×r_perp_i), D
 
 # CURRENT STATE
 Builds and runs on this machine (Windows, .NET 8.0.419, Python 3.13). Tests:
-Python 164/164 pass; C# 37/37 pass (was 0 runnable before audit-002 fix).
+Python 182/182 pass; C# 37/37 pass (was 0 runnable before audit-002 fix).
+ALL audit items (001-011) fixed across 9 pushed branches; deps pinned + CI live.
 Full audit complete (2026-06-14) → docs/audit/2026-06-14_audit_summary.{json,md}: 0 critical,
 2 high, 4 medium, 5 low. Branch `fable/fix/principal-stress-and-cs-tests/audit-001-002`
 (local only, not pushed) holds 4 commits: audit-002 (C# tests), audit-001 (principal stress),
@@ -119,9 +120,19 @@ and full verify_solver.py path not executable here; INP/parse logic covered by u
   Pinned requirements.txt to the validated set; reconciled claude.mb dep block. CI now installs
   the same pins it tests against. On branch fable/fix/dep-pinning/audit-006.
 
+- audit-009 (LOW): no linters/analyzers. Added .editorconfig (C#+Python), pyproject.toml
+  (ruff + mypy config), requirements-dev.txt (ruff/mypy), Directory.Build.props (.NET
+  analyzers on, non-failing), and an advisory (continue-on-error) ruff step in CI.
+  Release build clean; pytest 182 green; ruff config valid. On branch fable/fix/lint-tooling/audit-009.
+  FOLLOW-UP: ruff currently reports 169 advisory findings (104 auto-fixable) — pre-existing
+  style only; deferred as a separate cleanup pass (auto-fix risks reordering tests' deliberate
+  sys.path-before-import). Lint is non-blocking until that pass lands.
+
 ## Remaining (from audit, priority order)
-- audit-009 (LOW): no ruff/mypy/.editorconfig/analyzers.
+ALL 9 audit items resolved (001-011). Optional future work only:
 - Additional verify_solver.py benchmarks (bending, torsion, pressure vessel).
+- Lint cleanup pass to make the ruff CI step blocking (see audit-009 follow-up).
+- Extract ComputeFaceNormal outward-normal logic into Core for unit testing.
 
 # NOTES / OPEN QUESTIONS
 - Build-env: this environment lacks Microsoft.NET.Test.Sdk in NuGet cache until restored;

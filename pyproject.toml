@@ -1,0 +1,29 @@
+# Tooling config for the Python scripts (src/FEASolver.Scripts) and tests (audit-009).
+# Runtime deps: src/FEASolver.Scripts/requirements.txt. Dev tools: requirements-dev.txt.
+# Run locally:  ruff check .   ·   mypy src/FEASolver.Scripts
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["**/bin", "**/obj", "**/workspace", "**/verify_work"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP"]
+# Pragmatic ignores for a scientific/scripting codebase:
+ignore = [
+    "E501",  # line length advisory; long formula lines read better unwrapped
+    "B008",  # function calls in argument defaults — not used adversarially here
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests insert sys.path before importing the package under test — intentional.
+"tests/**" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true   # gmsh and CalculiX helpers ship no type stubs
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Lenient by design — numeric/scripting code, not a strict-typed library.
+disallow_untyped_defs = false
+check_untyped_defs = false
