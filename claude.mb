@@ -693,9 +693,10 @@ def torque_to_nodal_forces(node_positions, axis_origin, axis_direction, torque_N
 ## DEPENDENCY VERSIONS (pinned)
 
 ```
-# Python requirements.txt
-gmsh==4.12.2
-numpy==1.26.4
+# Python requirements.txt (validated, pinned — see src/FEASolver.Scripts/requirements.txt)
+gmsh==4.15.2
+numpy==2.2.6
+pytest==9.0.3
 # pythonOCC installed via conda: conda install -c conda-forge pythonocc-core=7.7.2
 
 # C# NuGet (in .csproj)

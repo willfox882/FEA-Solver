@@ -114,10 +114,12 @@ and full verify_solver.py path not executable here; INP/parse logic covered by u
   2026-06-14, CI note; architecture.md rewritten as a real orientation summary (projects, data
   flow, conventions). Docs-only, no test delta. On branch fable/fix/doc-drift/audit-010.
 
+- audit-006 (MED): dependency drift — requirements.txt pinned numpy==1.26.4 / pytest==8.2.0 /
+  gmsh>=4.12.2 while the validated env (182-green) is numpy 2.2.6 / pytest 9.0.3 / gmsh 4.15.2.
+  Pinned requirements.txt to the validated set; reconciled claude.mb dep block. CI now installs
+  the same pins it tests against. On branch fable/fix/dep-pinning/audit-006.
+
 ## Remaining (from audit, priority order)
-- audit-006 (MED): dependency drift / no lockfile (numpy 1.26.4 pin vs 2.2.6 installed; gmsh,
-  pytest, Python 3.11 vs 3.13). Pin/lock + reconcile requirements.txt vs claude.mb.
-  NOTE: CI uses Python 3.11 + requirements.txt as-is; revisit once pins reconciled.
 - audit-009 (LOW): no ruff/mypy/.editorconfig/analyzers.
 - Additional verify_solver.py benchmarks (bending, torsion, pressure vessel).
 
