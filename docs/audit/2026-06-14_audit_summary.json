@@ -1,0 +1,188 @@
+{
+  "audit": {
+    "date": "2026-06-14",
+    "repo": "FEA SOLVER",
+    "branch_at_audit": "master",
+    "auditor": "automated-engineering-audit",
+    "scope": "Full repo: WPF/.NET 8 app, FEASolver.Core, Python scripts (Gmsh/CalculiX pipeline), tests, docs",
+    "mode": "read-only audit; no code modified"
+  },
+  "environment": {
+    "python": "3.13.0 (project documents 3.11)",
+    "numpy": "2.2.6 (requirements pin 1.26.4)",
+    "gmsh": "4.15.2 (requirements >=4.12.2)",
+    "pytest": "9.0.3 (requirements 8.2.0)",
+    "dotnet_sdk": "8.0.419",
+    "ccx_present": false,
+    "notes": "CalculiX binary not installed (tools/ccx has README only) so end-to-end solve + verify_solver.py full path were not executed."
+  },
+  "test_results": {
+    "python_pytest": {"collected": 164, "passed": 164, "failed": 0, "duration_s": 3.82, "command": "python -m pytest tests/scripts_tests -q"},
+    "csharp_xunit": {"status": "BUILD_FAILED", "passed": 0, "reason": "FEASolver.Tests does not compile (see AUDIT-002)", "command": "dotnet test FEASolver.sln"}
+  },
+  "repo_health": {
+    "languages": ["C# (.NET 8 / WPF)", "Python 3.11+"],
+    "test_frameworks": ["xUnit (C#)", "pytest (Python)"],
+    "ci": "NONE (.github absent)",
+    "linters_typecheckers": "NONE configured (no ruff/flake8/mypy/black; no C# analyzers/.editorconfig)",
+    "lockfiles": "NONE (no requirements lock, no packages.lock.json)",
+    "subprocess_security": "OK (no shell=True in Python, UseShellExecute=false in C#, explicit exe paths)",
+    "secrets_scan": "No hardcoded secrets found in tracked files"
+  },
+  "issues": [
+    {
+      "id": "AUDIT-001",
+      "severity": "high",
+      "category": "numerical-correctness",
+      "title": "Principal-stress eigenvalue solver returns wrong values for general stress states",
+      "file": "src/FEASolver.App/ViewModels/ResultsViewModel.cs",
+      "line": 458,
+      "symbol": "ComputePrincipal",
+      "description": "The closed-form characteristic-polynomial solution is incorrectly constructed (uses a = -2*sqrt(r2) with cos-argument/assignment that do not match the depressed-cubic roots). Max/Min Principal stress is wrong for any tensor with shear components or repeated eigenvalues. A diagonal tensor with three distinct eigenvalues happens to return correct values, masking the bug.",
+      "evidence": "Ported the exact C# logic to Python and compared to numpy.linalg.eigvalsh: tensor(100,0,0,0,0,0) numpy[min0,max100] vs code[min-33.333,max66.667]; tensor(100,50,25,12;20,10,5) numpy[21.437,107.803] vs code[8.864,95.230].",
+      "impact": "Users viewing Max/Min Principal results get incorrect stress magnitudes (off by a constant offset proportional to the hydrostatic/shear content). Silent — no error thrown.",
+      "repro": "python: implement ComputePrincipal verbatim, compare against numpy.linalg.eigvalsh for any tensor with nonzero shear.",
+      "suggested_fix": "Replace with the canonical normalized-deviatoric trig algorithm: q=tr/3; p=sqrt((Σ(diag-q)^2 + 2Σshear^2)/6); B=(A-qI)/p; r=clamp(det(B)/2,-1,1); phi=acos(r)/3; max=q+2p*cos(phi); min=q+2p*cos(phi+2π/3). Verified to match numpy on all test tensors.",
+      "tests_to_add": "C# unit test ComputePrincipalTests comparing against precomputed eigenvalues for diagonal, sheared, hydrostatic, and degenerate tensors.",
+      "status": "open"
+    },
+    {
+      "id": "AUDIT-002",
+      "severity": "high",
+      "category": "tests-build",
+      "title": "C# test assembly does not compile — entire xUnit suite never runs",
+      "file": "tests/FEASolver.Tests/ExportServiceTests.cs",
+      "line": 1,
+      "description": "ExportServiceTests.cs is missing 'using Xunit;' (the other three test files have it). Because [Fact] cannot resolve, the whole FEASolver.Tests project fails to build, so ExportServiceTests, ModelSerializationTests, MeshDataDeserializationTests, and ToolValidatorTests all fail to run.",
+      "evidence": "dotnet test FEASolver.sln -> CS0246 'FactAttribute could not be found' (x12) in ExportServiceTests.cs. Core builds cleanly; restore is up-to-date.",
+      "impact": "All C# regression coverage (export units/CSV, model serialization, mesh deserialization, tool validation) is currently dead. The '148/164 tests passing' claim covers only the Python suite.",
+      "repro": "dotnet test FEASolver.sln --nologo",
+      "suggested_fix": "Add 'using Xunit;' to ExportServiceTests.cs (or add a GlobalUsings.cs with 'global using Xunit;' for the test project).",
+      "tests_to_add": "Add 'dotnet build' of the test project to CI to prevent regressions of this class.",
+      "status": "open"
+    },
+    {
+      "id": "AUDIT-003",
+      "severity": "medium",
+      "category": "numerical-correctness",
+      "title": "Equivalent (von Mises) strain formula has wrong coefficient on normal-strain term",
+      "file": "src/FEASolver.Scripts/utils/frd_reader.py",
+      "line": 283,
+      "symbol": "_strain_vonmises",
+      "description": "Computes (2/3)*(0.5*Σdiff^2 + 2*Σshear^2) = (1/3)Σdiff^2 + (4/3)Σshear^2. The standard equivalent strain sqrt(2/3 ε_dev:ε_dev) requires (2/9)Σdiff^2 + (4/3)Σshear^2. The normal-difference term is overweighted by 50%.",
+      "evidence": "_strain_vonmises(e,-e/2,-e/2,0,0,0) returns 1.2247*e but the function's own docstring claims '=|ε_axial|' for incompressible uniaxial; correct value is e.",
+      "impact": "Strain von Mises field (optional/secondary output) is overstated wherever normal-strain differences dominate. Displacement and stress-von-Mises (primary outputs) are unaffected.",
+      "repro": "python -c 'from utils.frd_reader import _strain_vonmises; print(_strain_vonmises(1e-3,-5e-4,-5e-4,0,0,0))'  # 1.2247e-3, expected 1e-3",
+      "suggested_fix": "Use sqrt((2.0/9.0)*dev + (4.0/3.0)*shear) (equivalently sqrt(2/3 * ((1/3)dev + 2*shear))). Update docstring to match.",
+      "tests_to_add": "pytest asserting incompressible uniaxial -> |ε_axial|, and agreement with a numpy deviatoric reference.",
+      "status": "open"
+    },
+    {
+      "id": "AUDIT-004",
+      "severity": "medium",
+      "category": "concurrency-io",
+      "title": "Potential pipe-buffer deadlock in INP-writer subprocess (stdout never drained)",
+      "file": "src/FEASolver.App/Services/PipelineService.cs",
+      "line": 137,
+      "symbol": "WriteInpAsync",
+      "description": "ProcessStartInfo sets RedirectStandardOutput=true but only StandardError is read (ReadToEndAsync). If write_inp.py ever emits enough to fill the stdout pipe buffer, the child blocks on write while the parent blocks on WaitForExit -> deadlock. MeshingService.RunPythonAsync drains both streams concurrently and is the correct pattern.",
+      "impact": "Latent hang; low probability today because write_inp.py logs to stderr and prints little to stdout, but brittle to future changes.",
+      "repro": "Add a large stdout dump to write_inp.py and run a solve.",
+      "suggested_fix": "Drain stdout and stderr concurrently (Task.WhenAll on both ReadToEndAsync) before WaitForExitAsync, mirroring MeshingService.",
+      "status": "open"
+    },
+    {
+      "id": "AUDIT-005",
+      "severity": "medium",
+      "category": "ci-process",
+      "title": "No CI pipeline; tests are not gated on commits/PRs",
+      "file": ".github",
+      "line": 0,
+      "description": "Repository has no CI configuration. The prompt requires CI to run lint, tests, static analysis, and a regression job. The C# build break (AUDIT-002) would have been caught immediately by CI.",
+      "impact": "Regressions (incl. non-compiling tests) ship undetected; no enforced quality gate.",
+      "suggested_fix": "Add a GitHub Actions workflow: matrix job running 'dotnet build' + 'dotnet test' and 'pip install -r requirements.txt' + 'pytest', plus ruff and dotnet format --verify-no-changes. Add a dedicated regression-test job.",
+      "status": "open"
+    },
+    {
+      "id": "AUDIT-006",
+      "severity": "medium",
+      "category": "dependencies-reproducibility",
+      "title": "Dependency drift and weak pinning break reproducibility",
+      "file": "src/FEASolver.Scripts/requirements.txt",
+      "line": 1,
+      "description": "requirements.txt pins numpy==1.26.4 and pytest==8.2.0 and gmsh>=4.12.2 (open upper bound). The audit environment runs numpy 2.2.6, gmsh 4.15.2, pytest 9.0.3, Python 3.13 — while claude.mb documents Python 3.11 / numpy 1.26.4. Tests pass on the newer stack, but the documented and actual environments diverge and there is no lockfile.",
+      "impact": "Non-reproducible builds; a future numpy/gmsh major bump could silently change meshing or numeric results.",
+      "suggested_fix": "Pin tested versions (or add a lockfile / constraints file), reconcile requirements.txt with claude.mb, and add an OSV/safety scan to CI.",
+      "status": "open"
+    },
+    {
+      "id": "AUDIT-007",
+      "severity": "low",
+      "category": "validation",
+      "title": "Poisson-ratio validation excludes valid ν=0 and auxetic materials",
+      "file": "src/FEASolver.Scripts/utils/models.py",
+      "line": 358,
+      "symbol": "FEAModel.validate",
+      "description": "Requires 0 < ν < 0.5, rejecting ν=0 (valid, e.g. cork-like / test cases) and negative ν (auxetic, valid in (-1,0.5)). Thermodynamic admissible range for isotropic linear elasticity is -1 < ν < 0.5.",
+      "impact": "Legitimate materials are rejected pre-solve.",
+      "suggested_fix": "Allow -1 < ν < 0.5 (CalculiX requires ν<0.5 strictly; ν=0 acceptable).",
+      "status": "open"
+    },
+    {
+      "id": "AUDIT-008",
+      "severity": "low",
+      "category": "parsing-portability",
+      "title": "FRD float regex assumes 3-digit exponent (Windows-specific)",
+      "file": "src/FEASolver.Scripts/utils/frd_reader.py",
+      "line": 217,
+      "symbol": "_CCX_NUM_RE",
+      "description": "Primary regex requires exactly 5 mantissa digits and 3 exponent digits ([+-][0-9]{3}). CalculiX builds on non-Windows platforms typically emit 2-digit exponents, so the primary match fails there and the code relies on the sign-boundary fallback. Acceptable for a Windows app but undocumented as a portability constraint and untested for the 2-digit path.",
+      "impact": "Reduced robustness on non-Windows ccx output; fallback mitigates but is less precise for adjacent negatives.",
+      "suggested_fix": "Relax to E[+-][0-9]{2,3} and add a regression test with a 2-digit-exponent FRD fixture.",
+      "status": "open"
+    },
+    {
+      "id": "AUDIT-009",
+      "severity": "low",
+      "category": "static-analysis",
+      "title": "No linting or type-checking configured for either language",
+      "file": "/",
+      "line": 0,
+      "description": "No ruff/flake8/black/mypy config for Python and no .editorconfig/analyzers/nullable-warnings-as-errors policy for C#. Style and type drift are unenforced.",
+      "suggested_fix": "Add ruff + mypy (Python) and .editorconfig + TreatWarningsAsErrors / analyzers (C#); wire into CI.",
+      "status": "open"
+    },
+    {
+      "id": "AUDIT-010",
+      "severity": "low",
+      "category": "documentation",
+      "title": "Doc drift: stated test count and architecture pointer out of date",
+      "file": "docs/ship_readiness.md",
+      "line": 3,
+      "description": "ship_readiness.md and claude.mb state '148 Python tests'; actual is 164. docs/architecture.md is a bare pointer to claude.mb. Minor but erodes trust in the docs.",
+      "suggested_fix": "Update counts; consider generating the test count in CI.",
+      "status": "open"
+    },
+    {
+      "id": "AUDIT-011",
+      "severity": "low",
+      "category": "robustness",
+      "title": "Unquoted ccx job-name argument",
+      "file": "src/FEASolver.App/Services/SolverService.cs",
+      "line": 41,
+      "symbol": "RunAsync",
+      "description": "Arguments = $\"-i {inputName}\" is not quoted. inputName is hardcoded to 'model' today so it is safe, but the pattern is brittle if a caller ever passes a name with spaces.",
+      "suggested_fix": "Quote the job name or assert it matches ^[A-Za-z0-9_]+$.",
+      "status": "open"
+    }
+  ],
+  "verified_correct": [
+    "Torque->nodal-force distribution (r^2-weighted) — Σ(r×F)·a = T validated analytically in code and tests.",
+    "C3D10 consistent (Galerkin) surface lumping: corners=0, midsides=A/3 — analytically correct for 6-node triangle.",
+    "Gmsh TET10 -> CCX C3D10 midside swap (slots 8<->9) consistent with inp_writer _FACE_MIDSIDES mapping.",
+    "Explicit unit handling (mm/m -> SI metres) with no fragile bbox heuristic.",
+    "Subprocess hygiene: no shell, explicit exe paths, STEP path-traversal/extension guard.",
+    "FRD fixed-width float parser handles negative-sign column shift via format-matching regex with fallbacks."
+  ],
+  "summary_counts": {"critical": 0, "high": 2, "medium": 4, "low": 5, "total": 11}
+}
