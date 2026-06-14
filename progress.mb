@@ -1,0 +1,111 @@
+# PROJECT OVERVIEW
+Windows-native WPF desktop FEA app. Wraps CalculiX (ccx.exe) + Gmsh (Python API) for
+3D linear-static structural analysis. Workflow: import STEP → mesh → assign BCs/loads →
+solve → visualize (stress/displacement heatmaps + deformed mesh).
+Scope: 3D linear static solids only (C3D4/C3D10 tets). SI units throughout (m, Pa, N, N·m);
+UI displays mm/MPa/GPa via conversion.
+Stack: WPF/.NET 8 (C#) + HelixToolkit.Wpf 3.1.2 + Python 3.11+ (gmsh, numpy) + CalculiX.
+Full canonical spec: `claude.mb` (repo root). This file (`progress.mb`) is the live
+task/state tracker; `claude.mb` is the architecture source of truth.
+
+# ARCHITECTURE
+Three projects + Python scripts + tests:
+- src/FEASolver.App (WinExe, net8.0-windows, WPF/MVVM via CommunityToolkit.Mvvm)
+  - ViewModels: MainViewModel (workflow state machine), ViewportViewModel (HelixToolkit
+    3D scene, face hit-testing, BC/load glyphs), PropertiesViewModel (BC/load assignment),
+    ResultsViewModel (colormap, deformed mesh, principal-stress calc), ModelTreeViewModel,
+    ConfigDialogViewModel.
+  - Services: PipelineService (orchestrates Mesh→ResolveNodes→WriteINP→ccx→ParseFRD),
+    MeshingService (subprocess mesh_step.py), SolverService (subprocess ccx.exe),
+    ResultService (subprocess parse_frd.py), ConfigService (appsettings.json), MeshCacheService.
+  - Views: ViewportView, ResultsView, PropertiesView, ModelTreeView, ConfigDialog.
+- src/FEASolver.Core (net8.0, shared models + pure services — referenced by App and Tests)
+  - Models: MeshData/Node/Element/FaceGroup, BoundaryCondition, Load (+LocalizedLoadData,
+    DirectionMode, LoadType), MaterialModel, ResultModels (ResultField/ResultSet), MeshExtensions.
+  - Services: ExportService (CSV), ToolValidator, VerificationService, PhysicsVerificationService,
+    ModelDiagnostics, IConfigService, IMeshCache.
+  - Numerics: PrincipalStress (symmetric-3x3 eigenvalues; added 2026-06-14 to fix audit-001).
+- src/FEASolver.Scripts (Python, called via subprocess; file-based JSON IPC)
+  - mesh_step.py: STEP→Gmsh→mesh.msh + mesh_data.json. write_inp.py: FEAModel JSON→.inp.
+    parse_frd.py: .frd→results.json. verify_solver.py / verify_physics.py / verify_synthetic.py.
+  - utils/: gmsh_utils.py (face mapping, TET10→C3D10 midside swap 8<->9, consistent lumping),
+    inp_writer.py (InpWriterV2 typed + legacy InpWriter; torque_to_nodal_forces r²-weighted),
+    frd_reader.py (fixed-width FRD float parser), models.py (dataclasses), mesh_io.py, mesh_cache.py.
+- tests/FEASolver.Tests (xUnit, references Core) + tests/scripts_tests (pytest).
+
+DATA FLOW: STEP → mesh_step.py → mesh_data.json → MeshData (C#) → user assigns BC/Load on
+faces → FEAModel JSON → write_inp.py → model.inp → ccx → model.frd → parse_frd.py →
+results.json → ResultSet (C#) → HelixToolkit colormap.
+
+KEY CONVENTIONS: 1-based node/elem IDs (CalculiX). HelixToolkit Y-up vs CalculiX Z-up.
+Face IDs = Gmsh physical surface tags. CalculiX tet face order S1..S4 = corner idx
+[0,1,2],[0,1,3],[1,2,3],[0,2,3]. C3D10 consistent surface lumping: corners 0, midsides A/3.
+Torque distributed as r²-weighted nodal force couple: F_i=(T/D)(a×r_perp_i), D=Σ|r_perp|².
+
+# CODING PRINCIPLES
+- SI internally; convert at UI boundary only. Explicit units (no bbox-heuristic unit guessing).
+- File-based IPC + subprocess; no shell=True (Python), UseShellExecute=false (C#); explicit exe paths.
+- Tests-first for fixes; numerical code validated against analytical/reference (numpy) values.
+- Minimal, atomic, root-cause fixes; one branch + PR per audit item (fable/fix/<desc>/<id>).
+- No secrets in code. Path-traversal/extension guards on user file inputs.
+- Audit artifacts + JSON live in docs/audit/ with date prefixes.
+
+# CURRENT STATE
+Builds and runs on this machine (Windows, .NET 8.0.419, Python 3.13). Tests:
+Python 164/164 pass; C# 37/37 pass (was 0 runnable before audit-002 fix).
+Full audit complete (2026-06-14) → docs/audit/2026-06-14_audit_summary.{json,md}: 0 critical,
+2 high, 4 medium, 5 low. Branch `fable/fix/principal-stress-and-cs-tests/audit-001-002`
+(local only, not pushed) holds 4 commits: audit-002 (C# tests), audit-001 (principal stress),
+torque FaceNormal direction fix, torque glyph visibility.
+FOLLOW-UP IDEA: extract ComputeFaceNormal outward-normal logic into Core for unit testing
+(mirrors the PrincipalStress extraction pattern).
+NOTE: CalculiX binary not installed locally (tools/ccx has README only) → end-to-end solve
+and full verify_solver.py path not executable here; INP/parse logic covered by unit tests.
+
+# TASKS
+## Completed
+- Full repo audit → audit_summary.json + 1-page md (docs/audit/2026-06-14_*).
+- audit-002 (HIGH): C# test suite never compiled/ran. Fixed: added `using Xunit;` to
+  ExportServiceTests.cs + Microsoft.NET.Test.Sdk PackageReference. 27 tests now run.
+- audit-001 (HIGH): principal-stress eigenvalues wrong for shear/repeated roots. Fixed:
+  new FEASolver.Core.Numerics.PrincipalStress (validated vs numpy); ResultsViewModel
+  delegates to it. +10 PrincipalStressTests. Suite 27→37 green.
+- progress.mb initialized (this file).
+- Torque glyph investigation (user-reported "linear, wrong direction"):
+  * FINDING: glyph geometry (ViewportViewModel.AddTorqueGlyph) was ALREADY a correct
+    300° right-hand torus arc — proven via SVD of the generated point cloud (2 large
+    in-plane extents, 1 tiny out-of-plane = tube). "Linear" was a stale build and/or a
+    too-thin tube (~0.5% of diagonal). Hardened: bigger arc, ~2.4x thicker tube, 48×14
+    segments, bigger arrowhead. (commit 55bff51)
+  * REAL BUG FOUND + FIXED: PropertiesViewModel.ComputeFaceNormal (FaceNormal torque-axis
+    mode) used arbitrary winding of the first 3 face node IDs → normal sign not guaranteed
+    outward → torque axis (and glyph) reversed ~50% of the time. This fed the SOLVER
+    (Localized.AxisDirection → torque_to_nodal_forces), so it was a physics-direction bug.
+    Fixed: orient outward via away-from-tet-4th-vertex rule (same as INP writer), averaged
+    over element-faces; centroid fallback. Verified on a reference tet. (commit 25ff946)
+
+## Remaining (from audit, priority order)
+- audit-003 (MED): _strain_vonmises wrong coeff (frd_reader.py:283) — uses (1/3)Σdiff² should
+  be (2/9); returns 1.225× for normal strains. Fix + pytest invariant.
+- audit-004 (MED): PipelineService.WriteInpAsync stdout never drained → potential pipe deadlock.
+  Drain stdout+stderr concurrently (mirror MeshingService).
+- audit-005 (MED): no CI. Add GitHub Actions (dotnet build/test + pytest + ruff + regression job).
+- audit-006 (MED): dependency drift / no lockfile (numpy 1.26.4 pin vs 2.2.6 installed; gmsh,
+  pytest, Python 3.11 vs 3.13). Pin/lock + reconcile requirements.txt vs claude.mb.
+- audit-007 (LOW): FEAModel.validate rejects ν=0 and auxetic; allow −1<ν<0.5.
+- audit-008 (LOW): FRD float regex assumes 3-digit Windows exponent; relax to {2,3} + fixture.
+- audit-009 (LOW): no ruff/mypy/.editorconfig/analyzers.
+- audit-010 (LOW): doc drift (148 vs 164 test count; architecture.md bare pointer).
+- audit-011 (LOW): SolverService unquoted `-i {inputName}` (safe today, brittle).
+- Additional verify_solver.py benchmarks (bending, torsion, pressure vessel).
+
+# NOTES / OPEN QUESTIONS
+- Build-env: this environment lacks Microsoft.NET.Test.Sdk in NuGet cache until restored;
+  `dotnet add package` CAN reach nuget.org (network restore works). Earlier "known build env
+  limitation" (memory) = the missing Test.Sdk + missing using directive; now resolved.
+- git remote: https://github.com/willfox882/FEA-Solver.git (origin). Branch/commits local only
+  so far — push/PR pending user direction.
+- Torque glyph: memory (Session 2026-04-24) says a "rotational glyph" was added with an r²
+  torque formula. User now reports it shows linear, wrong direction — verify it's actually a
+  curved arc primitive and that arc sweep direction follows a×r (right-hand rule about axis).
+- User prefs: mechanical engineer, token-efficient, code-first, no fluff, don't recap.

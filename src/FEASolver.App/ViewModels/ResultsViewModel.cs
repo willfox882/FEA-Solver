@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FEASolver.Core.Models;
+using FEASolver.Core.Numerics;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Media;
@@ -450,10 +451,10 @@ public partial class ResultsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Closed-form principal stress (max or min) of the symmetric Cauchy
-    /// tensor at every node. Returns null if the tensor was not parsed
-    /// (older results.json without S11..S13). Eigenvalues come from the
-    /// trigonometric solution of the characteristic polynomial.
+    /// Principal stress (max or min) of the symmetric Cauchy tensor at every
+    /// node. Returns null if the tensor was not parsed (older results.json
+    /// without S11..S13). Eigenvalues come from the validated
+    /// <see cref="PrincipalStress"/> solver in FEASolver.Core.
     /// </summary>
     private static ResultField? ComputePrincipal(ResultSet r, bool takeMax)
     {
@@ -465,31 +466,10 @@ public partial class ResultsViewModel : ObservableObject
         var vals = new double[n];
         for (int i = 0; i < n; i++)
         {
-            double s11 = r.S11.Values[i], s22 = r.S22.Values[i], s33 = r.S33.Values[i];
-            double s12 = r.S12.Values[i], s23 = r.S23.Values[i], s13 = r.S13.Values[i];
-            // Invariants of σ
-            double I1 = s11 + s22 + s33;
-            double I2 = s11*s22 + s22*s33 + s33*s11 - s12*s12 - s23*s23 - s13*s13;
-            double I3 = s11*s22*s33 + 2*s12*s23*s13 - s11*s23*s23 - s22*s13*s13 - s33*s12*s12;
-            // Solve λ³ − I1λ² + I2λ − I3 = 0 via trigonometric method
-            double p = I1 / 3.0;
-            double q = (2*I1*I1*I1 - 9*I1*I2 + 27*I3) / 54.0;
-            double r2 = (I1*I1 - 3*I2) / 9.0;
-            double s1, s3;
-            if (r2 <= 1e-30)
-            {
-                s1 = s3 = p;  // hydrostatic state
-            }
-            else
-            {
-                double sr = Math.Sqrt(r2);
-                double cosArg = Math.Clamp(q / (sr * sr * sr), -1.0, 1.0);
-                double phi = Math.Acos(cosArg) / 3.0;
-                double a = -2 * sr;
-                s1 = p + a * Math.Cos(phi + 2 * Math.PI / 3.0);  // max
-                s3 = p + a * Math.Cos(phi);                       // min
-            }
-            vals[i] = takeMax ? s1 : s3;
+            var (min, _, max) = PrincipalStress.Principals(
+                r.S11.Values[i], r.S22.Values[i], r.S33.Values[i],
+                r.S12.Values[i], r.S23.Values[i], r.S13.Values[i]);
+            vals[i] = takeMax ? max : min;
         }
         return new ResultField(ids, vals);
     }

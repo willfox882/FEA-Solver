@@ -1,5 +1,6 @@
 using FEASolver.Core.Models;
 using FEASolver.Core.Services;
+using Xunit;
 
 namespace FEASolver.Tests;
 

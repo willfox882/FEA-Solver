@@ -255,10 +255,12 @@ public partial class ViewportViewModel : ObservableObject
                 if (axis.Length < 1e-10) axis = new Vector3D(0, 0, 1);
                 axis.Normalize();
 
-                double arcRadius = totalLen * 0.35;
-                double tubeRadius = arcRadius * 0.07;
+                // Sized to read clearly as a curl, not a thin line: arc diameter
+                // ≈ the linear force-arrow length, with a visibly round tube.
+                double arcRadius = totalLen * 0.50;
+                double tubeRadius = arcRadius * 0.12;
                 double magnitude = load.Localized?.Magnitude ?? load.Magnitude;
-                // Negative magnitude → reverse glyph direction
+                // Negative magnitude → reverse the right-hand-rule sense.
                 if (magnitude < 0) axis = -axis;
 
                 AddTorqueGlyph(pts, idx, centroid.Value, axis, arcRadius, tubeRadius);
@@ -349,8 +351,8 @@ public partial class ViewportViewModel : ObservableObject
         var u = Vector3D.CrossProduct(axis, upRef); u.Normalize(); // u ⊥ axis, ⊥ upRef
         var v = Vector3D.CrossProduct(axis, u);     v.Normalize(); // v ⊥ axis, ⊥ u; arc u→v is CCW about axis
 
-        const int arcSegs  = 20;
-        const int tubeSegs = 8;
+        const int arcSegs  = 48;   // smoother spine so the curl never reads as facets
+        const int tubeSegs = 14;   // rounder tube cross-section
         const double arcDeg = 300.0;
         double arcAngle = arcDeg * Math.PI / 180.0;
 
@@ -395,8 +397,10 @@ public partial class ViewportViewModel : ObservableObject
         var tangent   = -Math.Sin(arcAngle) * u + Math.Cos(arcAngle) * v;
         tangent.Normalize();
 
-        double headLen = tubeRadius * 5.0;
-        double headR   = tubeRadius * 2.2;
+        // Prominent arrowhead so the rotational sense (right-hand rule about the
+        // applied axis) is obvious at a glance.
+        double headLen = tubeRadius * 4.5;
+        double headR   = tubeRadius * 2.8;
         var tipPt      = endPt + headLen * tangent;
 
         int headBase = pts.Count;

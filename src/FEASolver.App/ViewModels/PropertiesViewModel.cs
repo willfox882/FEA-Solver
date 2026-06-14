@@ -306,20 +306,79 @@ public partial class PropertiesViewModel : ObservableObject
         _                        => [0.0, 0.0, 1.0]
     };
 
+    // CalculiX tet face index → the 3 corner indices into Element.Nodes.
+    private static readonly int[][] TetFaceCorners =
+        [[0, 1, 2], [0, 1, 3], [1, 2, 3], [0, 2, 3]];
+
+    /// <summary>
+    /// Outward unit normal of a CAD face, used as the torque axis in FaceNormal
+    /// mode. The sign matters: a torque about +n vs −n curls the opposite way,
+    /// so an arbitrarily-wound normal makes the applied torque (and its glyph)
+    /// point the wrong direction half the time.
+    ///
+    /// We therefore orient each element-face normal OUTWARD by pointing it away
+    /// from that tet's 4th vertex — the same unambiguous rule the INP writer
+    /// uses — and average over the face's element-faces (smooths curved faces).
+    /// </summary>
     private double[] ComputeFaceNormal(int faceId)
     {
         var fg = GetFaceGroup(faceId);
-        if (fg is null || CurrentMesh is null || fg.NodeIds.Length < 3)
-            return [0.0, 0.0, 1.0];
+        if (fg is null || CurrentMesh is null) return [0.0, 0.0, 1.0];
         var nodeMap = CurrentMesh.Nodes.ToDictionary(n => n.Id);
+
+        double sx = 0, sy = 0, sz = 0;
+        if (fg.ElementFaces is { Length: > 0 } && CurrentMesh.Elements is not null)
+        {
+            var elemMap = CurrentMesh.Elements.ToDictionary(e => e.Id);
+            foreach (var ef in fg.ElementFaces)
+            {
+                if (ef.Length < 2 || !elemMap.TryGetValue(ef[0], out var elem)) continue;
+                int fi = ef[1];
+                if (fi < 0 || fi > 3) continue;
+                var corners = TetFaceCorners[fi];
+                if (corners[2] >= elem.Nodes.Length) continue;
+                if (!nodeMap.TryGetValue(elem.Nodes[corners[0]], out var A) ||
+                    !nodeMap.TryGetValue(elem.Nodes[corners[1]], out var B) ||
+                    !nodeMap.TryGetValue(elem.Nodes[corners[2]], out var C)) continue;
+
+                double ax = B.X - A.X, ay = B.Y - A.Y, az = B.Z - A.Z;
+                double bx = C.X - A.X, by = C.Y - A.Y, bz = C.Z - A.Z;
+                double nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+                double len = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+                if (len < 1e-15) continue;
+                nx /= len; ny /= len; nz /= len;
+
+                // Orient outward: flip to point away from the tet's 4th vertex.
+                int fourth = 6 - corners[0] - corners[1] - corners[2];
+                if (fourth < elem.Nodes.Length &&
+                    nodeMap.TryGetValue(elem.Nodes[fourth], out var D))
+                {
+                    double dx = D.X - A.X, dy = D.Y - A.Y, dz = D.Z - A.Z;
+                    if (nx * dx + ny * dy + nz * dz > 0) { nx = -nx; ny = -ny; nz = -nz; }
+                }
+                sx += nx; sy += ny; sz += nz;
+            }
+            double slen = Math.Sqrt(sx * sx + sy * sy + sz * sz);
+            if (slen > 1e-12) return [sx / slen, sy / slen, sz / slen];
+        }
+
+        // Fallback (no element-faces): first 3 face nodes, oriented away from the
+        // mesh centroid so the sign is still meaningful for convex bodies.
         var ids = fg.NodeIds.Where(nodeMap.ContainsKey).Take(3).ToArray();
         if (ids.Length < 3) return [0.0, 0.0, 1.0];
-        var A = nodeMap[ids[0]]; var B = nodeMap[ids[1]]; var C = nodeMap[ids[2]];
-        double ax = B.X - A.X, ay = B.Y - A.Y, az = B.Z - A.Z;
-        double bx = C.X - A.X, by = C.Y - A.Y, bz = C.Z - A.Z;
-        double nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
-        double len = Math.Sqrt(nx * nx + ny * ny + nz * nz);
-        return len < 1e-15 ? [0.0, 0.0, 1.0] : [nx / len, ny / len, nz / len];
+        var p0 = nodeMap[ids[0]]; var p1 = nodeMap[ids[1]]; var p2 = nodeMap[ids[2]];
+        double ux = p1.X - p0.X, uy = p1.Y - p0.Y, uz = p1.Z - p0.Z;
+        double vx = p2.X - p0.X, vy = p2.Y - p0.Y, vz = p2.Z - p0.Z;
+        double mx = uy * vz - uz * vy, my = uz * vx - ux * vz, mz = ux * vy - uy * vx;
+        double mlen = Math.Sqrt(mx * mx + my * my + mz * mz);
+        if (mlen < 1e-15) return [0.0, 0.0, 1.0];
+        mx /= mlen; my /= mlen; mz /= mlen;
+        double cx = CurrentMesh.Nodes.Average(n => n.X);
+        double cy = CurrentMesh.Nodes.Average(n => n.Y);
+        double cz = CurrentMesh.Nodes.Average(n => n.Z);
+        if (mx * (p0.X - cx) + my * (p0.Y - cy) + mz * (p0.Z - cz) < 0)
+            { mx = -mx; my = -my; mz = -mz; }
+        return [mx, my, mz];
     }
 
     private static double[] NormAxis(double x, double y, double z)
