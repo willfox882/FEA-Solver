@@ -97,11 +97,15 @@ and full verify_solver.py path not executable here; INP/parse logic covered by u
   Fixed to thermodynamic (-1,0.5); +8 parametrized tests. Suite 170→178.
   On branch fable/fix/poisson-range/audit-007. NOTE: C# ModelDiagnostics already used (-1,0.5).
 
+- audit-008 (LOW): _CCX_NUM_RE assumed 3-digit Windows exponent → silently dropped/mis-parsed
+  2-digit (Linux/Mac) FRD. Relaxed to {2,3} with a (?!\.) lookahead on the optional 3rd digit
+  so it can't steal a packed next-mantissa lead digit. +4 tests. Suite 178→182.
+  On branch fable/fix/frd-exponent-width/audit-008.
+
 ## Remaining (from audit, priority order)
 - audit-006 (MED): dependency drift / no lockfile (numpy 1.26.4 pin vs 2.2.6 installed; gmsh,
   pytest, Python 3.11 vs 3.13). Pin/lock + reconcile requirements.txt vs claude.mb.
   NOTE: CI uses Python 3.11 + requirements.txt as-is; revisit once pins reconciled.
-- audit-008 (LOW): FRD float regex assumes 3-digit Windows exponent; relax to {2,3} + fixture.
 - audit-009 (LOW): no ruff/mypy/.editorconfig/analyzers.
 - audit-010 (LOW): doc drift (148 vs 164 test count; architecture.md bare pointer).
 - audit-011 (LOW): SolverService unquoted `-i {inputName}` (safe today, brittle).

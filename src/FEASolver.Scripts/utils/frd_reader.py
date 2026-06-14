@@ -205,16 +205,21 @@ class FrdReader:
         return node_ids, values
 
 
-# CalculiX FRD numbers are always in the format:
-#   [-][0-9].[0-9]{5}E[+-][0-9]{3}
-# Positive values occupy 12 chars; negative values occupy 13 chars (leading minus).
-# This asymmetry makes fixed-width slicing unreliable: slicing at 12-char boundaries
-# chops the last exponent digit from negative values, turning E-007 into E-00 (= 10^0),
-# so -2.94935E-007 is misread as -2.94935 — a factor of 10^7 error.
-# The sign-boundary regex also fails when a negative value is immediately followed by a
+# CalculiX FRD numbers are in the format:
+#   [-][0-9].[0-9]{5}E[+-][0-9]{2,3}
+# Windows ccx builds emit 3-digit exponents (E-007); Linux/Mac builds emit 2-digit
+# (E-07). Values are packed with no separators: positive values occupy 12/11 chars,
+# negative 13/12 (leading minus). This asymmetry makes fixed-width slicing unreliable;
+# the sign-boundary regex also fails when a negative value is immediately followed by a
 # positive one (no sign between the trailing exponent digit and the next mantissa).
-# Solution: match the literal CCX number format directly, which is unambiguous.
-_CCX_NUM_RE = re.compile(r'-?[0-9]\.[0-9]{5}E[+-][0-9]{3}')
+# Solution: match the literal CCX number format directly.
+#
+# audit-008: the exponent is {2,3} digits, but the optional 3rd digit must NOT be the
+# leading digit of the next packed value. Every CCX mantissa begins "digit.", so the
+# (?!\.) lookahead refuses a 3rd exponent digit when it is immediately followed by a
+# dot — that digit belongs to the following number. A genuine 3-digit exponent's last
+# digit is never followed by '.', so legitimate matches are unaffected.
+_CCX_NUM_RE = re.compile(r'-?[0-9]\.[0-9]{5}E[+-][0-9]{2}(?:[0-9](?!\.))?')
 
 
 def _parse_fixed_floats(s: str) -> list[float]:

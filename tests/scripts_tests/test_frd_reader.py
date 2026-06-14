@@ -5,7 +5,9 @@ import math
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src/FEASolver.Scripts"))
-from utils.frd_reader import FrdReader, _vonmises, _strain_vonmises
+from utils.frd_reader import (
+    FrdReader, _vonmises, _strain_vonmises, _parse_fixed_floats,
+)
 
 
 SAMPLE_FRD = """\
@@ -79,3 +81,48 @@ def test_strain_vonmises_matches_deviatoric_reference(comps):
 
 def test_strain_vonmises_hydrostatic_is_zero():
     assert _strain_vonmises(5e-4, 5e-4, 5e-4, 0, 0, 0) == pytest.approx(0.0, abs=1e-15)
+
+
+# ── audit-008: 2-digit (Linux/Mac) vs 3-digit (Windows) FRD exponents ────────
+
+def test_parse_floats_two_digit_exponent():
+    # Linux/Mac ccx emits 2-digit exponents; values packed (negative→positive, no space).
+    vals = _parse_fixed_floats("0.00000E+00-1.00000E-041.00000E+00")
+    assert vals == pytest.approx([0.0, -1e-4, 1.0])
+
+
+def test_parse_floats_three_digit_exponent():
+    # Windows ccx emits 3-digit exponents; the optional 3rd digit must be kept.
+    vals = _parse_fixed_floats("-2.94935E-0071.23456E+002")
+    assert vals == pytest.approx([-2.94935e-7, 1.23456e2])
+
+
+def test_parse_floats_mixed_exponent_widths():
+    # A 2-digit value packed before a 3-digit value must not steal a digit.
+    vals = _parse_fixed_floats("1.50000E-05-3.00000E+012")
+    assert vals == pytest.approx([1.5e-5, -3.0e12])
+
+
+# 2-digit-exponent twin of SAMPLE_FRD — exercises full FrdReader.parse path.
+SAMPLE_FRD_2DIGIT = """\
+    1UNODE                 0
+ -1         1 0.00000E+00 0.00000E+00 0.00000E+00
+ -3
+ -4 DISP       4  1
+ -5  D1
+ -5  D2
+ -5  D3
+ -5  ALL
+ -1         1 0.00000E+00-1.00000E-041.00000E+00
+ -1         2 0.00000E+00 0.00000E+00-2.00000E-04
+ -3
+"""
+
+
+def test_parse_frd_two_digit_exponents(tmp_path):
+    frd_file = tmp_path / "model.frd"
+    frd_file.write_text(SAMPLE_FRD_2DIGIT)
+    result = FrdReader(str(frd_file)).parse()
+    assert result["displacement_y"]["values"][0] == pytest.approx(-1e-4)
+    assert result["displacement_z"]["values"][0] == pytest.approx(1.0)
+    assert result["displacement_z"]["values"][1] == pytest.approx(-2e-4)
