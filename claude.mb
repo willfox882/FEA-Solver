@@ -1,6 +1,6 @@
 # FEA SOLVER — PROJECT CONTEXT (claude.mb)
 # Source of truth for all AI-assisted development.
-# Updated: 2026-04-22 — Phase 8 (backend hardening) complete. 148 Python tests passing.
+# Updated: 2026-06-14 — audit fixes (001-008, 011) complete. 182 Python + 37 C# tests passing.
 
 ---
 

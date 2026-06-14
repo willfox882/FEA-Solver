@@ -1,8 +1,9 @@
 # FEA Solver — Ship-Readiness & NX-Nastran Gap Analysis
 
-**Status (2026-04-22):** 148 Python tests passing. Linear-static 3D solid
-pipeline (STEP → Gmsh C3D10 → CalculiX → FRD → heatmap) is feature-complete
-and physically verified by static-INP and end-to-end harnesses.
+**Status (2026-06-14):** 182 Python + 37 C# tests passing (219 total); CI on
+`windows-latest` runs both suites per push/PR. Linear-static 3D solid pipeline
+(STEP → Gmsh C3D10 → CalculiX → FRD → heatmap) is feature-complete and
+physically verified by static-INP and end-to-end harnesses.
 
 ---
 

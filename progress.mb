@@ -109,12 +109,16 @@ and full verify_solver.py path not executable here; INP/parse logic covered by u
   NOTE: SolverService lives in FEASolver.App (WPF, not referenced by Tests) → covered via
   build + e2e path, not a unit test (input is a compile-time constant).
 
+- audit-010 (LOW): doc drift — stale "148 Python tests" in claude.mb header + ship_readiness.md;
+  architecture.md was a 2-line bare pointer. Fixed: counts → 182 Python + 37 C# (219), date
+  2026-06-14, CI note; architecture.md rewritten as a real orientation summary (projects, data
+  flow, conventions). Docs-only, no test delta. On branch fable/fix/doc-drift/audit-010.
+
 ## Remaining (from audit, priority order)
 - audit-006 (MED): dependency drift / no lockfile (numpy 1.26.4 pin vs 2.2.6 installed; gmsh,
   pytest, Python 3.11 vs 3.13). Pin/lock + reconcile requirements.txt vs claude.mb.
   NOTE: CI uses Python 3.11 + requirements.txt as-is; revisit once pins reconciled.
 - audit-009 (LOW): no ruff/mypy/.editorconfig/analyzers.
-- audit-010 (LOW): doc drift (148 vs 164 test count; architecture.md bare pointer).
 - Additional verify_solver.py benchmarks (bending, torsion, pressure vessel).
 
 # NOTES / OPEN QUESTIONS
