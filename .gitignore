@@ -26,6 +26,7 @@ build/
 *.sta
 *.12d
 workspace/
+verify_work/
 
 # OS
 Thumbs.db
