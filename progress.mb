@@ -53,7 +53,9 @@ Torque distributed as r²-weighted nodal force couple: F_i=(T/D)(a×r_perp_i), D
 # CURRENT STATE
 Builds and runs on this machine (Windows, .NET 8.0.419, Python 3.13). Tests:
 Python 182/182 pass; C# 37/37 pass (was 0 runnable before audit-002 fix).
-ALL audit items (001-011) fixed across 9 pushed branches; deps pinned + CI live.
+ALL audit items (001-011) fixed and CONSOLIDATED ON master (origin/master @ 99e9c08):
+PR #1 (audit-001-002) merged on GitHub, then audit-003..009 rebased linearly on top and
+pushed. All 9 fable/fix feature branches deleted (local + remote). deps pinned + CI live.
 Full audit complete (2026-06-14) → docs/audit/2026-06-14_audit_summary.{json,md}: 0 critical,
 2 high, 4 medium, 5 low. Branch `fable/fix/principal-stress-and-cs-tests/audit-001-002`
 (local only, not pushed) holds 4 commits: audit-002 (C# tests), audit-001 (principal stress),
